@@ -1,0 +1,19 @@
+# Source — not needed at runtime, dist/ is what matters
+src/
+tsconfig.json
+
+# Secrets & local config
+.env
+.env.local
+*.env
+**/.env
+
+# Dev & test artifacts
+node_modules/
+*.log
+.DS_Store
+coverage/
+
+# Git
+.git/
+.gitignore
