@@ -25,6 +25,10 @@
     "@langchain/groq": "^0.1.2",
     "@langchain/langgraph": "^0.2.36",
     "@stellar/stellar-sdk": "^12.3.0",
+    "@x402/core": "^2.9.0",
+    "@x402/express": "^2.9.0",
+    "@x402/fetch": "^2.9.0",
+    "@x402/stellar": "^2.9.0",
     "axios": "^1.7.9",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
@@ -36,9 +40,7 @@
     "localtunnel": "^2.0.2",
     "ora": "^8.1.1",
     "pinata": "^1.1.6",
-    "table": "^6.8.2",
-    "x402-axios": "^0.3.0",
-    "x402-express": "^0.3.0"
+    "table": "^6.8.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -53,14 +55,24 @@
     "node": ">=18.0.0"
   },
   "keywords": [
-    "stellar", "ai-agents", "blockchain", "x402",
-    "micropayments", "langchain", "groq", "erc-8004", "ipfs", "pinata"
+    "stellar",
+    "ai-agents",
+    "blockchain",
+    "x402",
+    "micropayments",
+    "langchain",
+    "groq",
+    "erc-8004",
+    "ipfs",
+    "pinata"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/yourusername/stellar-agent"
   },
   "homepage": "https://github.com/yourusername/stellar-agent#readme",
-  "bugs": { "url": "https://github.com/yourusername/stellar-agent/issues" },
+  "bugs": {
+    "url": "https://github.com/yourusername/stellar-agent/issues"
+  },
   "license": "MIT"
 }

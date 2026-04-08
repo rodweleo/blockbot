@@ -1,198 +1,135 @@
-import express, { type Request, type Response } from "express"
-import cors                                      from "cors"
-import { runAgent }                              from "../core/agentRunner.js"
-import type { AgentConfig }                      from "../core/types.js"
+import express, { type Request, type Response } from "express";
+import cors from "cors";
+import { paymentMiddlewareFromConfig } from "@x402/express";
+import { HTTPFacilitatorClient, RoutesConfig } from "@x402/core/server";
+import { ExactStellarScheme } from "@x402/stellar/exact/server";
+import { runAgent } from "../core/agentRunner.js";
+import type { AgentConfig } from "../core/types.js";
 
-// ─── Agent HTTP Server ────────────────────────────────────────────────────────
+// ─── Agent HTTP Server (x402-Compliant) ───────────────────────────────────────
 
 export function createAgentServer(opts: {
-  config:    AgentConfig
-  secretKey: string
-  network:   "testnet" | "mainnet"
+  config: AgentConfig;
+  secretKey: string;
+  network: "testnet" | "mainnet";
 }): express.Application {
-  const { config, secretKey, network } = opts
-  const app = express()
+  const { config, secretKey, network } = opts;
+  const app = express();
 
-  app.use(cors())
-  app.use(express.json())
+  app.use(cors());
+  app.use(express.json());
 
-  // ── Health check ─────────────────────────────────────────────────────────────
+  // ─── x402 Configuration ───────────────────────────────────────────────────────
+  // Set up x402 middleware for payment enforcement
+  const stellarNetwork =
+    network === "testnet" ? "stellar:testnet" : "stellar:public";
+  const facilitatorUrl = "https://www.x402.org/facilitator";
+
+  // Configure x402 middleware for the /agent endpoint
+  const x402config: RoutesConfig = {
+    ["POST /agent"]: {
+      accepts: {
+        scheme: "exact",
+        price: `$${config.price}`, // x402 format: $amount
+        network: stellarNetwork,
+        payTo: config.owner!,
+      },
+    },
+  };
+
+  // Apply x402 middleware
+  app.use(
+    paymentMiddlewareFromConfig(
+      x402config,
+      new HTTPFacilitatorClient({ url: facilitatorUrl }),
+      [
+        {
+          network: stellarNetwork,
+          server: new ExactStellarScheme(),
+        },
+      ],
+    ),
+  );
+
+  // ── Health check (no payment required) ──────────────────────────────────────
   app.get("/health", (_req: Request, res: Response) => {
     res.json({
-      status:  "ok",
-      agent:   config.name,
+      status: "ok",
+      agent: config.name,
       version: config.version,
-      model:   config.model,
-    })
-  })
+      model: config.model,
+      x402: true,
+    });
+  });
 
-  // ── Agent metadata ────────────────────────────────────────────────────────────
+  // ── Agent metadata (no payment required) ────────────────────────────────────
   app.get("/agent", (_req: Request, res: Response) => {
     res.json({
-      name:        config.name,
+      name: config.name,
       description: config.description,
-      price:       config.price,
-      asset:       config.asset,
-      model:       config.model,
-      tools:       config.tools,
-      version:     config.version,
-    })
-  })
+      price: config.price,
+      asset: config.asset,
+      model: config.model,
+      tools: config.tools,
+      version: config.version,
+      network: network,
+      owner: config.owner,
+    });
+  });
 
-  // ── Main agent endpoint ───────────────────────────────────────────────────────
+  // ── Main agent endpoint (payment protected by x402 middleware) ────────────────
   app.post("/agent", async (req: Request, res: Response) => {
-    const { task } = req.body
+    const { task } = req.body;
 
     if (!task) {
-      res.status(400).json({ error: "Missing 'task' in request body" })
-      return
+      res.status(400).json({ error: "Missing 'task' in request body" });
+      return;
     }
 
-    // ── Payment verification ───────────────────────────────────────────────────
-    // Check for payment proof headers (sent by callAgent after paying)
-    const txHash        = req.headers["x-payment-txhash"]  as string
-    const paymentFrom   = req.headers["x-payment-from"]    as string
-    const paymentAmount = req.headers["x-payment-amount"]  as string
-    const paymentAsset  = req.headers["x-payment-asset"]   as string
+    // At this point, x402 middleware has verified payment
+    // Extract payment info from headers set by middleware
+    const paymentFrom = req.headers["x-payment-from"] as string;
+    const paymentTxHash = req.headers["x-payment-txhash"] as string;
 
-    if (!txHash) {
-      // No payment — return 402 with payment requirements
-      res.status(402).json({
-        error:   "Payment required",
-        payment: {
-          amount:  config.price,
-          asset:   config.asset,
-          payTo:   config.owner,
-          network: network,
-          resource: "/agent",
-          description: `${config.name}: ${config.description}`,
-        },
-        instructions: [
-          "1. Send payment to the 'payTo' address on Stellar",
-          "2. Retry this request with payment proof headers:",
-          "   X-Payment-TxHash: <transaction_hash>",
-          "   X-Payment-From: <your_stellar_address>",
-          "   X-Payment-Amount: <amount_paid>",
-          "   X-Payment-Asset: <asset>",
-        ],
-      })
-      return
-    }
-
-    // ── Verify payment on Stellar ──────────────────────────────────────────────
-    try {
-      const verified = await verifyPayment({
-        txHash,
-        from:     paymentFrom,
-        to:       config.owner!,
-        amount:   config.price,
-        asset:    config.asset,
-        network,
-      })
-
-      if (!verified) {
-        res.status(402).json({ error: "Payment verification failed" })
-        return
-      }
-    } catch (e: any) {
-      res.status(402).json({ error: `Payment verification error: ${e.message}` })
-      return
-    }
-
-    // ── Run the agent ──────────────────────────────────────────────────────────
-    console.log(`\n  [${new Date().toISOString()}] Task received from ${paymentFrom?.slice(0, 20)}`)
-    console.log(`  Task: "${task.slice(0, 100)}"`)
-    console.log(`  Payment: ${paymentAmount} ${paymentAsset} (tx: ${txHash?.slice(0, 20)}...)`)
+    console.log(
+      `\n  [${new Date().toISOString()}] Task received from ${paymentFrom?.slice(0, 20)}`,
+    );
+    console.log(`  Task: "${task.slice(0, 100)}"`);
+    console.log(`  Payment verified: ${paymentTxHash?.slice(0, 20)}...`);
 
     try {
-      const steps: string[] = []
+      const steps: string[] = [];
       const result = await runAgent({
         config,
         secretKey,
         task,
         network,
         onStep: (step) => {
-          console.log(`    → ${step}`)
-          steps.push(step)
+          console.log(`    → ${step}`);
+          steps.push(step);
         },
-      })
+      });
 
-      console.log(`  ✓ Task complete\n`)
+      console.log(`  ✓ Task complete\n`);
 
       res.json({
-        success:   true,
-        agent:     config.name,
-        result:    result.answer,
+        success: true,
+        agent: config.name,
+        result: result.answer,
         toolCalls: result.toolCalls,
         steps,
         payment: {
-          txHash,
-          from:   paymentFrom,
-          amount: paymentAmount,
-          asset:  paymentAsset,
+          txHash: paymentTxHash,
+          from: paymentFrom,
+          amount: config.price,
+          asset: config.asset,
         },
-      })
+      });
     } catch (e: any) {
-      console.error(`  ✗ Task failed: ${e.message}`)
-      res.status(500).json({ error: `Agent execution failed: ${e.message}` })
+      console.error(`  ✗ Task failed: ${e.message}`);
+      res.status(500).json({ error: `Agent execution failed: ${e.message}` });
     }
-  })
+  });
 
-  return app
-}
-
-// ─── Payment Verification ─────────────────────────────────────────────────────
-async function verifyPayment(opts: {
-  txHash:  string
-  from:    string
-  to:      string
-  amount:  string
-  asset:   string
-  network: "testnet" | "mainnet"
-}): Promise<boolean> {
-  try {
-    const baseUrl = opts.network === "testnet"
-      ? "https://horizon-testnet.stellar.org"
-      : "https://horizon.stellar.org"
-
-    const res  = await fetch(`${baseUrl}/transactions/${opts.txHash}`)
-    if (!res.ok) return false
-
-    const tx: any = await res.json()
-
-    // Check transaction is recent (within 5 minutes)
-    const txTime   = new Date(tx.created_at).getTime()
-    const now      = Date.now()
-    const fiveMin  = 5 * 60 * 1000
-    if (now - txTime > fiveMin) {
-      console.log("  ⚠ Payment transaction is too old")
-      return false
-    }
-
-    // Fetch operations on this transaction
-    const opsRes  = await fetch(`${baseUrl}/transactions/${opts.txHash}/operations`)
-    const opsData: any = await opsRes.json()
-    const ops     = opsData._embedded?.records || []
-
-    for (const op of ops) {
-      if (op.type !== "payment") continue
-      if (op.to !== opts.to) continue
-      if (op.from !== opts.from) continue
-
-      const paidAmount = parseFloat(op.amount)
-      const required   = parseFloat(opts.amount)
-
-      if (paidAmount >= required) {
-        const assetMatch =
-          (opts.asset === "XLM" && op.asset_type === "native") ||
-          (opts.asset !== "XLM" && op.asset_code === opts.asset)
-
-        if (assetMatch) return true
-      }
-    }
-
-    return false
-  } catch {
-    return false
-  }
+  return app;
 }
