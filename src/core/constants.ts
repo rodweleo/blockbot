@@ -1,3 +1,5 @@
+import { getBlockbotHome, getDefaultRegistryPath } from "./paths.js";
+
 // ─── Shared Constants ─────────────────────────────────────────────────────────
 // The shared registry account is pre-funded and deployed on Stellar testnet.
 // Its public key is hardcoded here — users NEVER need its secret key.
@@ -15,9 +17,10 @@ export const SHARED_REGISTRY = {
     network: "testnet" as const,
   },
   mainnet: {
-    // Mainnet registry — set when package hits v1.0
-    publicKey: "",
-    secretKey: "",
+    // Mainnet registry — must be configured before production launch
+    // TODO: Deploy a funded mainnet registry account and set these keys
+    publicKey: process.env.BLOCKBOT_MAINNET_REGISTRY_PUBLIC || "",
+    secretKey: process.env.BLOCKBOT_MAINNET_REGISTRY_SECRET || "",
     horizon: "https://horizon.stellar.org",
     network: "mainnet" as const,
   },
@@ -33,7 +36,42 @@ export const SUPPORTED_MODELS = [
 export const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 export const DEFAULT_PRICE = "0.10";
 export const DEFAULT_ASSET = "XLM"; // XLM by default — works out of box with Friendbot
-export const DEFAULT_PORT = 3000;
-export const CONFIG_DIR_NAME = ".blockbot";
+export const DEFAULT_PORT = 51780;
+export const CONFIG_DIR_NAME = getBlockbotHome();
+export const LOCAL_REGISTRY_PATH =
+  process.env.BLOCKBOT_LOCAL_REGISTRY_PATH || getDefaultRegistryPath();
 
 export const REGISTRY_DATA_PREFIX = "agent:";
+
+// ─── Platform Fee Configuration ──────────────────────────────────────────────
+// The platform takes a percentage of each agent call payment.
+// Override via environment variables for flexibility.
+export const PLATFORM_FEE_PERCENT = parseFloat(
+  process.env.BLOCKBOT_PLATFORM_FEE_PERCENT || "10",
+); // default 10%
+export const PLATFORM_FEE_WALLET: Record<string, string> = {
+  testnet:
+    process.env.BLOCKBOT_PLATFORM_WALLET_TESTNET ||
+    "GBDGVI23Y3UIYQJR6GK7LEONVNCHBXGVOX4ZCD5YQL5XCXDMV7SCS6QM",
+  mainnet: process.env.BLOCKBOT_PLATFORM_WALLET_MAINNET || "",
+};
+
+// ─── Validation Helpers ──────────────────────────────────────────────────────
+export const AGENT_NAME_REGEX = /^[a-z0-9][a-z0-9-]{0,62}$/;
+export const MAX_PRICE = 10000; // safeguard against absurd prices
+export const MIN_PRICE = 0.0001;
+
+export function validateAgentName(name: string): string | null {
+  if (!name) return "Agent name is required";
+  if (!AGENT_NAME_REGEX.test(name))
+    return "Agent name must be lowercase alphanumeric with hyphens (e.g. my-agent-1)";
+  return null;
+}
+
+export function validatePrice(price: string): string | null {
+  const num = parseFloat(price);
+  if (isNaN(num)) return "Price must be a valid number";
+  if (num < MIN_PRICE) return `Price must be at least ${MIN_PRICE}`;
+  if (num > MAX_PRICE) return `Price must be at most ${MAX_PRICE}`;
+  return null;
+}

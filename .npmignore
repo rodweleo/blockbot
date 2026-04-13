@@ -17,3 +17,5 @@ coverage/
 # Git
 .git/
 .gitignore
+
+agent-*

@@ -2,9 +2,9 @@ import { Transaction, TransactionBuilder } from "@stellar/stellar-sdk";
 import { x402Client, x402HTTPClient } from "@x402/fetch";
 import { createEd25519Signer, getNetworkPassphrase } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
-import { resolveAgent } from "./registry.js";
 import { getAccountBalances } from "../utils/stellar.js";
 import type { CallAgentOptions, CallAgentResult } from "./types.js";
+import { agentRegistry } from "./registry.js";
 
 // ─── callAgent (x402-Compliant) ────────────────────────────────────────────────
 // The core function used by:
@@ -29,7 +29,7 @@ export async function callAgent(
   try {
     // ── Step 1: Resolve agent ──────────────────────────────────────────────────
     log("Resolving agent", nameOrAddress);
-    const meta = await resolveAgent(nameOrAddress, network);
+    const meta = await agentRegistry.resolveAgent(nameOrAddress, network);
     log("Agent found", `${meta.name} @ ${meta.endpoint}`);
     log("Price", `$${meta.price} ${meta.asset}`);
 

@@ -6,9 +6,10 @@ import fs from "fs";
 import chalk from "chalk";
 import { generateKeypair, fundTestnetAccount } from "./utils/stellar.js";
 import { uploadMetadata } from "./utils/pinata.js";
-import { registerAgent } from "./core/registry.js";
+import { agentRegistry } from "./core/registry.js";
 import { logger } from "./utils/logger.js";
 import { injectGlobalConfig, loadGlobalConfig } from "./utils/config.js";
+import { validateAgentName, validatePrice } from "./core/constants.js";
 
 injectGlobalConfig();
 import type { AgentMetadata } from "./core/types.js";
@@ -21,13 +22,15 @@ program
   .argument("<name>", "Agent name (e.g. my-researcher)")
   .option("-m, --model <model>", "Groq model to use", "llama-3.3-70b-versatile")
   .option("-p, --price <price>", "Price per call in USDC", "0.10")
-  .option("-a, --asset <asset>", "Payment asset XLM|USDC", "USDC")
+  .option("-a, --asset <asset>", "Payment asset XLM|USDC", "XLM")
   .option(
     "-d, --desc <description>",
     "Agent description",
     "A helpful AI agent on Stellar",
   )
   .option("-t, --tools <tools>", "Comma-separated tools", "web_search,read_url")
+  .option("--type <type>", "Agent type: agent, proxy, or data", "agent")
+  .option("--target-url <url>", "Target URL for proxy type agents")
   .option("-n, --network <network>", "testnet or mainnet", "testnet")
   .option("--no-register", "Skip Stellar registration")
   .action(async (name, opts) => {
@@ -40,6 +43,19 @@ program.parse();
 
 async function createAgent(name: string, opts: any) {
   logger.banner();
+
+  // ── Validate inputs ────────────────────────────────────────────────────────
+  const nameError = validateAgentName(name);
+  if (nameError) {
+    console.error(chalk.red(`  ✗ Invalid agent name: ${nameError}`));
+    process.exit(1);
+  }
+
+  const priceError = validatePrice(opts.price);
+  if (priceError) {
+    console.error(chalk.red(`  ✗ Invalid price: ${priceError}`));
+    process.exit(1);
+  }
 
   const network = opts.network as "testnet" | "mainnet";
   const tools = opts.tools
@@ -99,7 +115,28 @@ async function createAgent(name: string, opts: any) {
       `Be concise, accurate, and always explain what tools you used.`,
     max_tool_iterations: 10,
     owner: publicKey,
+    type: (opts.type || "agent") as "agent" | "proxy" | "data",
   };
+
+  // Apply type-specific configuration
+  if (config.type === "proxy") {
+    if (!opts.targetUrl) {
+      console.error(
+        chalk.red("  ✗ --target-url is required for proxy type agents"),
+      );
+      process.exit(1);
+    }
+    config.tools = [];
+    config.model = "none";
+    config.system_prompt = "";
+    (config as any).proxy = {
+      targetUrl: opts.targetUrl,
+      allowedMethods: ["GET", "POST", "PUT", "DELETE"],
+    };
+  } else if (config.type === "data") {
+    config.tools = [];
+    config.system_prompt = "";
+  }
 
   // agent.config.json
   fs.writeFileSync(
@@ -123,6 +160,7 @@ async function createAgent(name: string, opts: any) {
     `# PINATA_JWT=`,
     `# NGROK_AUTHTOKEN=`,
     `# TAVILY_API_KEY=`,
+    `# GEMINI_API_KEY=`,
   ].join("\n");
 
   fs.writeFileSync(path.join(agentDir, ".env"), envContent, { mode: 0o600 });
@@ -131,7 +169,7 @@ async function createAgent(name: string, opts: any) {
   // .gitignore
   fs.writeFileSync(
     path.join(agentDir, ".gitignore"),
-    [".env", "node_modules/", "dist/", "*.log"].join("\n"),
+    [".env", "node_modules/", "dist/", ".blockbot/", "*.log"].join("\n"),
   );
   logger.success(".gitignore");
 
@@ -143,7 +181,9 @@ async function createAgent(name: string, opts: any) {
     type: "module",
     scripts: {
       serve: "blockbot serve",
-      start: "blockbot serve --no-tunnel",
+      start: "blockbot start",
+      chat: "blockbot chat",
+      "serve:local": "blockbot serve --no-tunnel",
     },
     dependencies: {
       blockbot: "^0.1.0",
@@ -204,7 +244,7 @@ async function createAgent(name: string, opts: any) {
         ipfs_cid: cid,
         registered_at: new Date().toISOString(),
       };
-      await registerAgent({
+      await agentRegistry.registerAgent({
         name,
         metadata,
         agentSecret: secretKey,
@@ -228,13 +268,34 @@ async function createAgent(name: string, opts: any) {
   console.log(
     `    ${chalk.cyan("1.")} ${chalk.gray("cd")} ${chalk.white(name)}`,
   );
-  console.log(
-    `    ${chalk.cyan("2.")} Edit ${chalk.yellow(".env")} — add your GROQ_API_KEY and PINATA_JWT`,
-  );
-  console.log(`    ${chalk.cyan("3.")} ${chalk.gray("npm install")}`);
-  console.log(
-    `    ${chalk.cyan("4.")} ${chalk.gray("blockbot serve")} ${chalk.gray("# starts server + tunnel + registers")}`,
-  );
+  if (config.type === "data") {
+    console.log(
+      `    ${chalk.cyan("2.")} Edit ${chalk.yellow(".env")} — add GEMINI_API_KEY ${chalk.gray("(+ optionally GROQ_API_KEY for LLM answers)")}`,
+    );
+    console.log(`    ${chalk.cyan("3.")} ${chalk.gray("npm install")}`);
+    console.log(
+      `    ${chalk.cyan("4.")} ${chalk.gray("blockbot index ./data/")} ${chalk.gray("# index your files with Gemini embeddings")}`,
+    );
+    console.log(
+      `    ${chalk.cyan("5.")} ${chalk.gray("blockbot serve")} ${chalk.gray("# starts server + tunnel + registers")}`,
+    );
+  } else if (config.type === "proxy") {
+    console.log(
+      `    ${chalk.cyan("2.")} Edit ${chalk.yellow(".env")} — add PINATA_JWT ${chalk.gray("(optional, for IPFS metadata)")}`,
+    );
+    console.log(`    ${chalk.cyan("3.")} ${chalk.gray("npm install")}`);
+    console.log(
+      `    ${chalk.cyan("4.")} ${chalk.gray("blockbot serve")} ${chalk.gray("# starts server + tunnel + registers")}`,
+    );
+  } else {
+    console.log(
+      `    ${chalk.cyan("2.")} Edit ${chalk.yellow(".env")} — add your GROQ_API_KEY and PINATA_JWT`,
+    );
+    console.log(`    ${chalk.cyan("3.")} ${chalk.gray("npm install")}`);
+    console.log(
+      `    ${chalk.cyan("4.")} ${chalk.gray("blockbot serve")} ${chalk.gray("# starts server + tunnel + registers")}`,
+    );
+  }
   console.log();
   console.log(chalk.gray("  Your agent wallet:"));
   console.log(chalk.gray("    Public key: ") + chalk.white(publicKey));

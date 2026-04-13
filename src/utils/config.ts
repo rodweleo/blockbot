@@ -1,10 +1,10 @@
 import fs from "fs";
 import path from "path";
-import os from "os";
 import type { WalletConfig, AgentConfig } from "../core/types.js";
+import { getBlockbotHome } from "../core/paths.js";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
-const CONFIG_DIR = path.join(os.homedir(), ".blockbot");
+const CONFIG_DIR = getBlockbotHome();
 const WALLET_FILE = path.join(CONFIG_DIR, "wallet.json");
 const GLOBAL_CONFIG = path.join(CONFIG_DIR, "config.json");
 
