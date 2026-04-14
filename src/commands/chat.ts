@@ -89,7 +89,7 @@ export async function chatCommand(options: {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.cyan("you> "),
+    prompt: chalk.cyan("you$ "),
   });
 
   rl.prompt();
@@ -117,13 +117,13 @@ export async function chatCommand(options: {
     turns.push({ role: "user", content: input });
 
     const task = buildTask(input, turns);
-    console.log(chalk.magenta("agent> ") + chalk.gray("thinking..."));
+    console.log(chalk.magenta("agent$ ") + chalk.gray("thinking..."));
 
     try {
       const result = await runAgent({
         config,
         secretKey,
-        task,
+        task: input,
         network,
       });
 
@@ -131,7 +131,7 @@ export async function chatCommand(options: {
       turns.push({ role: "assistant", content: answer });
       saveHistory(dir, turns);
 
-      console.log(chalk.magenta("agent> ") + answer);
+      console.log(chalk.magenta("agent$ ") + answer);
       if (result.toolCalls?.length) {
         console.log(
           chalk.gray(
@@ -141,7 +141,7 @@ export async function chatCommand(options: {
       }
       console.log();
     } catch (e: any) {
-      console.log(chalk.red(`agent> error: ${e.message}`));
+      console.log(chalk.red(`agent$ error: ${e.message}`));
       console.log();
     }
 

@@ -62,7 +62,10 @@ export function buildStellarCoreTools(
   const resolveAgentTool = new DynamicStructuredTool({
     name: "resolve_agent",
     description:
-      "Look up a registered agent by name or wallet address and get its metadata including endpoint and price",
+      "Look up a registered agent by name or wallet address and return its metadata (description, price, model, owner). " +
+      "Use this only to inspect an agent's details. " +
+      "The agent endpoint is x402-protected — direct HTTP calls will be rejected with 402. " +
+      "To actually invoke an agent, use the call_agent tool instead.",
     schema: z.object({
       nameOrAddress: z
         .string()
@@ -74,11 +77,11 @@ export function buildStellarCoreTools(
         return JSON.stringify({
           name: meta.name,
           description: meta.description,
-          endpoint: meta.endpoint,
           price: meta.price,
           asset: meta.asset,
           model: meta.model,
           owner: meta.owner,
+          note: "To call this agent use the call_agent tool — do not call the endpoint directly.",
         });
       } catch (e: any) {
         return `Error resolving agent: ${e.message}`;
@@ -125,7 +128,12 @@ export function buildStellarCoreTools(
   const callAgentTool = new DynamicStructuredTool({
     name: "call_agent",
     description:
-      "Call another registered agent and pay via x402 from this agent wallet",
+      "Call another registered agent by name or address and send it a task. " +
+      "This tool handles EVERYTHING automatically: resolving the agent, negotiating the x402 payment, " +
+      "signing and submitting the Stellar transaction, and returning the agent's response. " +
+      "ALWAYS use this tool to invoke another agent — never call agent endpoints directly, " +
+      "never use send_stellar_payment to pay an agent manually, " +
+      "and never combine resolve_agent + manual HTTP + payment. This is the ONLY correct way to call another agent.",
     schema: z.object({
       nameOrAddress: z
         .string()

@@ -42,11 +42,11 @@ export async function serveCommand(options: {
   const pinataJwt = env.PINATA_JWT || process.env.PINATA_JWT;
 
   if (!secretKey) {
-    console.error(chalk.red("  ✗ STELLAR_SECRET_KEY not found in .env"));
+    console.error(chalk.red("  STELLAR_SECRET_KEY not found in .env"));
     process.exit(1);
   }
   if (!groqKey && agentType === "agent") {
-    console.error(chalk.red("  ✗ GROQ_API_KEY not found in .env"));
+    console.error(chalk.red("  GROQ_API_KEY not found in .env"));
     process.exit(1);
   }
 
@@ -62,7 +62,7 @@ export async function serveCommand(options: {
   if (agentType === "data") {
     const geminiApiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
     if (!geminiApiKey) {
-      console.error(chalk.red("  ✗ GEMINI_API_KEY not found in .env"));
+      console.error(chalk.red("  GEMINI_API_KEY not found in .env"));
       console.error(
         chalk.gray("    Required for data-type agents to embed queries"),
       );
@@ -71,7 +71,7 @@ export async function serveCommand(options: {
 
     vectorStore = await loadVectorStoreFromDisk(dir, geminiApiKey);
     if (!vectorStore) {
-      console.error(chalk.red("  ✗ No embedding store found"));
+      console.error(chalk.red("   No embedding store found"));
       console.error(chalk.gray("    Run: blockbot index <data-path>"));
       process.exit(1);
     }
@@ -124,7 +124,31 @@ export async function serveCommand(options: {
 
   config.owner = publicKey;
 
-  const app = createAgentServer({
+  // ── Pre-flight: Ensure this agent's account has required trustlines ──────────
+  // Each agent is responsible for initializing its own SAC/payment trustlines
+  // so it can receive x402 payments
+  const { ensureTrustline } = await import("../utils/stellar.js");
+  try {
+    console.log(chalk.cyan(`  [1.5/5] Initializing payment trustlines...`));
+    const { existed } = await ensureTrustline(secretKey, config.asset, network);
+    if (!existed) {
+      logger.success(
+        `Agent trustline created for ${config.asset}`,
+        "(ready to receive x402 payments)",
+      );
+    } else {
+      logger.success(`Agent trustline ready`, config.asset);
+    }
+  } catch (e: any) {
+    logger.warn(`Trustline setup warning`, e.message);
+    console.log(
+      chalk.gray(
+        `    If your agent will receive x402 payments, ensure the account has the necessary trustlines.`,
+      ),
+    );
+  }
+
+  const app = await createAgentServer({
     config,
     secretKey,
     network,
