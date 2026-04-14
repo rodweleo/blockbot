@@ -75,3 +75,13 @@ export function validatePrice(price: string): string | null {
   if (num > MAX_PRICE) return `Price must be at most ${MAX_PRICE}`;
   return null;
 }
+
+export const USDC_ISSUERS: Record<string, string> = {
+  testnet: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5",
+  mainnet: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+};
+
+export const EURC_ISSUERS: Record<string, string> = {
+  testnet: "GB3Q6QDZYTHWT7E5PVS3W7FTMU3ANQGGBWRS6EZQRQRGFGXK2QOSXHFF",
+  mainnet: "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2",
+};

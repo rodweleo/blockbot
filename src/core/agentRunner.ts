@@ -35,8 +35,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const model = new ChatGroq({
     apiKey,
     model: config.model || "llama-3.3-70b-versatile",
-    temperature: 0.1,
-    maxTokens: 4096,
+    temperature: 1,
+    maxTokens: 1024,
   });
 
   // Load tools for this agent
@@ -54,11 +54,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       contextEditingMiddleware({
         edits: [
           new ClearToolUsesEdit({
-            triggerTokens: 30000,
+            trigger: {
+              tokens: 30000,
+            },
             keep: {
               tokens: 1000,
-              fraction: 0.3,
-              messages: 3,
             },
           }),
         ],
@@ -68,7 +68,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       ? config.system_prompt
       : `You are ${config.name}, an AI agent deployed on the Stellar blockchain. ` +
         `You have tools available to check balances, make payments, search the web, and call other agents. ` +
-        `Always be concise and helpful. When using tools, explain what you're doing.`,
+        `Always be concise and helpful. When using tools, explain what you're doing. ` +
+        `IMPORTANT RULES FOR CALLING OTHER AGENTS: ` +
+        `(1) ALWAYS use the call_agent tool to invoke another agent — it handles x402 payment automatically. ` +
+        `(2) NEVER manually combine resolve_agent + send_stellar_payment + HTTP fetch to call an agent. ` +
+        `(3) NEVER call agent endpoints directly — they are x402-protected and will reject direct requests. ` +
+        `(4) call_agent is the single correct entry point for all agent-to-agent interactions.`,
   });
 
   const toolCalls: { tool: string; input: string; output: string }[] = [];
@@ -111,7 +116,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
               .map((c: any) => c.text)
               .join("")
           : "";
-    if (content && msg.getType() === "ai") {
+    if (content && msg.type === "ai") {
       answer = content;
       break;
     }

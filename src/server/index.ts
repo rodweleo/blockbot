@@ -8,7 +8,10 @@ import { paymentMiddlewareFromConfig } from "@x402/express";
 import { HTTPFacilitatorClient, RoutesConfig } from "@x402/core/server";
 import { ExactStellarScheme } from "@x402/stellar/exact/server";
 import { runAgent } from "../core/agentRunner.js";
-import { sendPayment } from "../utils/stellar.js";
+import {
+  generatex402FacilitatorApiKey,
+  sendPayment,
+} from "../utils/stellar.js";
 import {
   PLATFORM_FEE_PERCENT,
   PLATFORM_FEE_WALLET,
@@ -202,12 +205,12 @@ async function handleDataRequest(
 
 // ─── Agent HTTP Server (x402-Compliant) ───────────────────────────────────────
 
-export function createAgentServer(opts: {
+export async function createAgentServer(opts: {
   config: AgentConfig;
   secretKey: string;
   network: "testnet" | "mainnet";
   vectorStore?: VectorStoreSearchable;
-}): express.Application {
+}): Promise<express.Application> {
   const { config, secretKey, network, vectorStore } = opts;
   const app = express();
 
@@ -219,14 +222,19 @@ export function createAgentServer(opts: {
   // Set up x402 middleware for payment enforcement
   const stellarNetwork =
     network === "testnet" ? "stellar:testnet" : "stellar:public";
-  const facilitatorUrl = "https://www.x402.org/facilitator";
+  const facilitatorUrl =
+    network === "mainnet"
+      ? "https://channels.openzeppelin.com/x402" // mainnet
+      : "https://channels.openzeppelin.com/x402/testnet";
+
+  const facilitatorApiKey = await generatex402FacilitatorApiKey(network);
 
   // Configure x402 middleware for the /agent endpoint
   const x402config: RoutesConfig = {
     ["POST /agent"]: {
       accepts: {
         scheme: "exact",
-        price: `$${config.price}`, // x402 format: $amount
+        price: `$${config.price} ${config.asset}`, // x402 format: $amount
         network: stellarNetwork,
         payTo: config.owner!,
       },
@@ -237,7 +245,19 @@ export function createAgentServer(opts: {
   app.use(
     paymentMiddlewareFromConfig(
       x402config,
-      new HTTPFacilitatorClient({ url: facilitatorUrl }),
+      new HTTPFacilitatorClient({
+        url: facilitatorUrl,
+        createAuthHeaders: async () => {
+          const headers = {
+            Authorization: `Bearer ${facilitatorApiKey}`,
+          };
+          return {
+            verify: headers,
+            settle: headers,
+            supported: headers,
+          };
+        },
+      }),
       [
         {
           network: stellarNetwork,

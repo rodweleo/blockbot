@@ -5,3 +5,5 @@ first-agent
 my-first-bot
 
 agent-*
+
+.env
