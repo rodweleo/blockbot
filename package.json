@@ -40,13 +40,17 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.3.2",
     "figlet": "^1.8.0",
+    "helmet": "^8.1.0",
     "inquirer": "^10.2.2",
     "langchain": "^1.3.1",
     "localtunnel": "^2.0.2",
     "ora": "^8.1.1",
     "pinata": "^1.1.6",
-    "table": "^6.8.2"
+    "proxy-addr": "^2.0.7",
+    "table": "^6.8.2",
+    "x402-stellar-express": "^0.2.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
@@ -55,6 +59,7 @@
     "@types/jest": "^30.0.0",
     "@types/localtunnel": "^2.0.4",
     "@types/node": "^22.10.5",
+    "@types/proxy-addr": "^2.0.3",
     "@types/supertest": "^7.2.0",
     "jest": "^30.3.0",
     "supertest": "^7.2.2",

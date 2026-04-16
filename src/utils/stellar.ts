@@ -38,6 +38,11 @@ const SAC_CONTRACTS: Record<string, Record<string, string>> = {
   },
 };
 
+export const XLM_SAC = {
+  "stellar:testnet": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+  "stellar:public": "CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA",
+};
+
 // ─── Stellar Utilities ─────────────────────────────────────────────────────────
 export function getSorobanServer(
   network: "testnet" | "mainnet",
@@ -652,9 +657,12 @@ export async function generatex402FacilitatorApiKey(network: string) {
       ? "https://channels.openzeppelin.com/gen"
       : "https://channels.openzeppelin.com/testnet/gen";
 
-  const res = await axios.get(facilitatorUrl);
-  if (res.status === 200) {
+  try {
+    const res = await axios.get(facilitatorUrl);
     return res.data.apiKey;
+  } catch (e) {
+    throw new Error("Failed to generate x402 facilitator API key", {
+      cause: e,
+    });
   }
-  throw new Error("Failed to generate x402 facilitator API key");
 }

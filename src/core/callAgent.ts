@@ -46,7 +46,7 @@ function addSimulationHint(message: string, asset: string): string {
 export async function callAgent(
   opts: CallAgentOptions,
 ): Promise<CallAgentResult> {
-  const { nameOrAddress, task, payerKeypair, onStep } = opts;
+  const { nameOrAddress, task: receivedTask, payerKeypair, onStep } = opts;
   const network = opts.network || "testnet";
   const stepsLog: string[] = [];
   const start = Date.now();
@@ -187,7 +187,7 @@ export async function callAgent(
       initialResponse = await fetch(meta.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task }),
+        body: JSON.stringify({ task: receivedTask }),
       });
     } catch (err: any) {
       throw new Error(`Cannot reach agent endpoint: ${err.message}`);
@@ -246,7 +246,7 @@ export async function callAgent(
           payload: {
             ...paymentPayload.payload,
             transaction: TransactionBuilder.cloneFrom(tx, {
-              fee: "1",
+              fee: tx.fee,
               sorobanData,
               networkPassphrase: passphrase,
             })
@@ -265,16 +265,14 @@ export async function callAgent(
       // ── Step 8: Retry with signed payment ──────────────────────────────────
       const paidResponse = await fetch(meta.endpoint, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...paymentHeaders,
-        },
-        body: JSON.stringify({ task }),
+        headers: { ...paymentHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ task: receivedTask }),
       });
 
-      const responseText = await paidResponse.text();
-      console.log(responseText);
-      log("Paid response body", responseText || "(empty)");
+      log(JSON.stringify(paidResponse, null, 2));
+
+      const text = await paidResponse.text();
+      log(`Paid response text: ${text}`);
 
       log(`Payment headers: ${JSON.stringify(paidResponse.headers)}`);
       const paymentSettleResponse = httpClient.getPaymentSettleResponse(
@@ -296,13 +294,7 @@ export async function callAgent(
         );
       }
 
-      let result: any;
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        throw new Error(`Agent returned non-JSON response: ${responseText}`);
-      }
-
+      const result = await paidResponse.json();
       const elapsed = ((Date.now() - start) / 1000).toFixed(1);
       log("Response received", `${elapsed}s`);
 

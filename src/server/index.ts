@@ -4,8 +4,12 @@ import express, {
   type NextFunction,
 } from "express";
 import cors from "cors";
-import { paymentMiddlewareFromConfig } from "@x402/express";
-import { HTTPFacilitatorClient, RoutesConfig } from "@x402/core/server";
+import { paymentMiddleware } from "@x402/express";
+import {
+  HTTPFacilitatorClient,
+  RoutesConfig,
+  x402ResourceServer,
+} from "@x402/core/server";
 import { ExactStellarScheme } from "@x402/stellar/exact/server";
 import { runAgent } from "../core/agentRunner.js";
 import {
@@ -18,6 +22,16 @@ import {
 } from "../core/constants.js";
 import axios from "axios";
 import type { AgentConfig } from "../core/types.js";
+import { rateLimit } from "express-rate-limit";
+import helmet from "helmet";
+
+const rateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes).
+  standardHeaders: "draft-8", // draft-6: `RateLimit-*` headers; draft-7 & draft-8: combined `RateLimit` header
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
+  ipv6Subnet: 56, // Set to 60 or 64 to be less aggressive, or 52 or 48 to be more aggressive
+});
 
 /** Minimal interface for any LangChain-compatible vector store */
 interface VectorStoreSearchable {
@@ -25,33 +39,6 @@ interface VectorStoreSearchable {
     query: string,
     k?: number,
   ): Promise<Array<{ pageContent: string; metadata: Record<string, any> }>>;
-}
-
-// ─── Simple in-memory rate limiter ────────────────────────────────────────────
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = parseInt(process.env.BLOCKBOT_RATE_LIMIT || "30", 10);
-
-function rateLimiter(req: Request, res: Response, next: NextFunction): void {
-  const ip = req.ip || req.socket.remoteAddress || "unknown";
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    next();
-    return;
-  }
-
-  entry.count++;
-  if (entry.count > RATE_LIMIT_MAX) {
-    res
-      .status(429)
-      .json({ error: "Too many requests. Please try again later." });
-    return;
-  }
-
-  next();
 }
 
 // ─── Platform fee transfer (fire-and-forget, non-blocking) ───────────────────
@@ -212,58 +199,137 @@ export async function createAgentServer(opts: {
   vectorStore?: VectorStoreSearchable;
 }): Promise<express.Application> {
   const { config, secretKey, network, vectorStore } = opts;
+
   const app = express();
 
-  app.use(cors());
-  app.use(express.json({ limit: "1mb" }));
+  app.use(helmet());
+  app.use(
+    express.json({
+      limit: "1mb",
+      type: ["application/json", "text/plain"],
+      verify: (req: any, _res, buf) => {
+        req._rawBody = buf.toString("utf8");
+        try {
+          req._parsedBody = JSON.parse(req._rawBody);
+        } catch {
+          req._parsedBody = {};
+        }
+      },
+    }),
+  );
   app.use(rateLimiter);
+  app.use((req, _res, next) => {
+    if (req.body) {
+      (req as any)._parsedBody = { ...req.body };
+    }
+    next();
+  });
+
+  app.use((req, res, next) => {
+    const sig =
+      req.headers["x-payment-signature"] || req.headers["payment-signature"];
+    if (sig) {
+      console.log("=== INCOMING PAYMENT SIGNATURE ===");
+      try {
+        const decoded = Buffer.from(sig as string, "base64").toString("utf8");
+        console.log(JSON.parse(decoded));
+      } catch {
+        console.log("Raw:", sig);
+      }
+    }
+    next();
+  });
 
   // ─── x402 Configuration ───────────────────────────────────────────────────────
   // Set up x402 middleware for payment enforcement
   const stellarNetwork =
-    network === "testnet" ? "stellar:testnet" : "stellar:public";
+    network === "testnet" ? "stellar:testnet" : "stellar:pubnet";
   const facilitatorUrl =
     network === "mainnet"
       ? "https://channels.openzeppelin.com/x402" // mainnet
       : "https://channels.openzeppelin.com/x402/testnet";
 
   const facilitatorApiKey = await generatex402FacilitatorApiKey(network);
-
   // Configure x402 middleware for the /agent endpoint
-  const x402config: RoutesConfig = {
-    ["POST /agent"]: {
-      accepts: {
-        scheme: "exact",
-        price: `$${config.price} ${config.asset}`, // x402 format: $amount
-        network: stellarNetwork,
-        payTo: config.owner!,
-      },
+  // const x402RoutesConfig: RoutesConfig = {
+  //   ["POST /agent"]: {
+  //     accepts: {
+  //       scheme: "exact",
+  //       price: `$${config.price} ${config.asset}`, // x402 format: $amount
+  //       network: stellarNetwork,
+  //       payTo: config.owner!,
+  //     },
+  //   },
+  // };
+
+  const facilitatorConfigs = {
+    url: facilitatorUrl,
+    createAuthHeaders: async () => {
+      const headers = {
+        Authorization: `Bearer ${facilitatorApiKey}`,
+      };
+      return {
+        verify: headers,
+        settle: headers,
+        supported: headers,
+      };
     },
   };
+  const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfigs);
 
-  // Apply x402 middleware
+  const originalVerify = facilitatorClient.verify.bind(facilitatorClient);
+  const originalSettle = facilitatorClient.settle.bind(facilitatorClient);
+
+  facilitatorClient.verify = async (
+    paymentPayload: any,
+    paymentRequirements: any,
+  ) => {
+    console.log("=== FACILITATOR VERIFY CALLED ===");
+    try {
+      const result = await originalVerify(paymentPayload, paymentRequirements);
+      console.log("Verify result:", JSON.stringify(result));
+      return result;
+    } catch (e: any) {
+      console.error("Verify FAILED:", e.message);
+      throw e;
+    }
+  };
+
+  facilitatorClient.settle = async (
+    paymentPayload: any,
+    paymentRequirements: any,
+  ) => {
+    console.log("=== FACILITATOR SETTLE CALLED ===");
+    try {
+      const result = await originalSettle(paymentPayload, paymentRequirements);
+      console.log("Settle result:", JSON.stringify(result));
+      return result;
+    } catch (e: any) {
+      console.error("Settle FAILED:", e.message);
+      throw e;
+    }
+  };
+
   app.use(
-    paymentMiddlewareFromConfig(
-      x402config,
-      new HTTPFacilitatorClient({
-        url: facilitatorUrl,
-        createAuthHeaders: async () => {
-          const headers = {
-            Authorization: `Bearer ${facilitatorApiKey}`,
-          };
-          return {
-            verify: headers,
-            settle: headers,
-            supported: headers,
-          };
+    paymentMiddleware(
+      {
+        "POST /agent": {
+          accepts: [
+            {
+              scheme: "exact",
+              price: `$${config.price}`,
+              network: stellarNetwork,
+              payTo: config.owner!,
+            },
+          ],
+          description: config.description,
+          mimeType: "application/json",
         },
-      }),
-      [
-        {
-          network: stellarNetwork,
-          server: new ExactStellarScheme(),
-        },
-      ],
+      },
+      new x402ResourceServer(facilitatorClient).register(
+        "stellar:testnet",
+        new ExactStellarScheme(),
+      ),
     ),
   );
 
@@ -297,6 +363,11 @@ export async function createAgentServer(opts: {
 
   // ── Main endpoint (payment protected by x402 middleware) ────────────────────
   app.post("/agent", async (req: Request, res: Response) => {
+    if (!req.body || Object.keys(req.body).length === 0) {
+      req.body = (req as any)._parsedBody || {};
+    }
+    const body = req.body;
+
     const agentType = config.type || "agent";
 
     // Extract payment info from headers set by x402 middleware
@@ -323,7 +394,7 @@ export async function createAgentServer(opts: {
 
       if (agentType === "proxy") {
         // ── Proxy mode: forward request to target URL ─────────────────────────
-        responseData = await handleProxyRequest(req.body, config);
+        responseData = await handleProxyRequest(body, config);
       } else if (agentType === "data") {
         // ── Data mode: RAG query via LangChain vector store ────────────────
         if (!vectorStore) {
@@ -333,10 +404,11 @@ export async function createAgentServer(opts: {
           });
           return;
         }
-        responseData = await handleDataRequest(req.body, vectorStore);
+        responseData = await handleDataRequest(body, vectorStore);
       } else {
+        console.log(req.body);
         // ── Agent mode: run LangChain AI agent (original behavior) ────────────
-        const { task } = req.body;
+        const { task } = body;
 
         if (!task || typeof task !== "string") {
           res.status(400).json({
