@@ -1,4 +1,4 @@
-import { Transaction, TransactionBuilder } from "@stellar/stellar-sdk";
+import { Memo, Transaction, TransactionBuilder } from "@stellar/stellar-sdk";
 import { x402Client, x402HTTPClient } from "@x402/fetch";
 import { createEd25519Signer, getNetworkPassphrase } from "@x402/stellar";
 import { ExactStellarScheme } from "@x402/stellar/exact/client";
@@ -241,6 +241,7 @@ export async function callAgent(
       const sorobanData = tx.toEnvelope().v1()?.tx()?.ext()?.sorobanData();
       // Configure fee to 1 stroop, prevents testnet facilitator limit issue and lets us handle "fee too low" errors more gracefully
       if (sorobanData) {
+        const ref = Date.now().toString(36);
         paymentPayload = {
           ...paymentPayload,
           payload: {
@@ -249,6 +250,7 @@ export async function callAgent(
               fee: tx.fee,
               sorobanData,
               networkPassphrase: passphrase,
+              memo: Memo.text(`x402:p:v1:${ref}`),
             })
               .build()
               .toXDR(),

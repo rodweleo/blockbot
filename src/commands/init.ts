@@ -11,6 +11,7 @@ import {
 } from "../utils/stellar.js";
 import { saveWallet, loadWallet, ensureConfigDir } from "../utils/config.js";
 import { logger } from "../utils/logger.js";
+import { getBlockbotHome } from "../core/paths.js";
 
 // ─── init command ─────────────────────────────────────────────────────────────
 // Run once by any new user. Sets up:
@@ -33,7 +34,7 @@ export async function initCommand(): Promise<void> {
   // Check if already initialised
   const existing = loadWallet();
   if (existing) {
-    console.log(chalk.yellow("  ⚠ Already initialised."));
+    console.log(chalk.yellow("  Already initialised."));
     console.log(chalk.gray(`    Wallet: ${existing.publicKey}`));
     console.log(chalk.gray(`    Network: ${existing.network}`));
     console.log();
@@ -131,7 +132,7 @@ export async function initCommand(): Promise<void> {
 
   ensureConfigDir();
   saveWallet({ publicKey, secretKey, network: answers.network });
-  logger.success("Wallet saved to ~/.stellar-agent/wallet.json");
+  logger.success("Wallet saved to ~/.blockbot/wallet.json");
 
   // Write global config with API keys
   const globalConfig = {
@@ -142,11 +143,19 @@ export async function initCommand(): Promise<void> {
     tavilyApiKey: answers.tavilyKey.trim(),
   };
 
-  const configPath = path.join(os.homedir(), ".stellar-agent", "config.json");
+  const configDir = getBlockbotHome();
+
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  const configPath = path.join(configDir, "config.json");
+
   fs.writeFileSync(configPath, JSON.stringify(globalConfig, null, 2), {
     mode: 0o600,
   });
-  logger.success("API keys saved to ~/.stellar-agent/config.json");
+
+  logger.success("API keys saved to ~/.blockbot/config.json");
 
   // ── Step 4: Verify Groq key works ────────────────────────────────────────
   console.log();

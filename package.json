@@ -1,12 +1,12 @@
 {
   "name": "blockbot",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Deploy and call AI agents on the Stellar blockchain with x402 micropayments",
   "type": "module",
   "main": "./dist/cli.js",
   "bin": {
-    "blockbot": "./dist/cli.js",
-    "create-blockbot": "./dist/create.js"
+    "blockbot": "dist/cli.js",
+    "create-blockbot": "dist/create.js"
   },
   "files": [
     "dist/",
@@ -84,11 +84,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/stellar-agent"
+    "url": "git+https://github.com/rodweleo/blockbot.git"
   },
-  "homepage": "https://github.com/yourusername/stellar-agent#readme",
+  "homepage": "https://github.com/rodweleo/blockbot#readme",
   "bugs": {
-    "url": "https://github.com/yourusername/stellar-agent/issues"
+    "url": "https://github.com/rodweleo/blockbot/issues"
   },
   "license": "MIT"
 }
