@@ -242,19 +242,19 @@ export async function callAgent(
       // Configure fee to 1 stroop, prevents testnet facilitator limit issue and lets us handle "fee too low" errors more gracefully
       if (sorobanData) {
         const ref = Date.now().toString(36);
+        const clonedTx = TransactionBuilder.cloneFrom(tx, {
+          fee: tx.fee,
+          sorobanData,
+          networkPassphrase: passphrase,
+          memo: Memo.text(`x402:p:v1:${ref}`),
+        }).build();
+
+        // Re-sign after mutation
+        clonedTx.sign(callerKeypair);
+
         paymentPayload = {
           ...paymentPayload,
-          payload: {
-            ...paymentPayload.payload,
-            transaction: TransactionBuilder.cloneFrom(tx, {
-              fee: tx.fee,
-              sorobanData,
-              networkPassphrase: passphrase,
-              memo: Memo.text(`x402:p:v1:${ref}`),
-            })
-              .build()
-              .toXDR(),
-          },
+          payload: { ...paymentPayload.payload, transaction: clonedTx.toXDR() },
         };
       }
 
