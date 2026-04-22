@@ -322,7 +322,12 @@ export async function createAgentServer(opts: {
               price:
                 config.asset === "USDC"
                   ? `$${config.price}`
-                  : `${config.price} ${config.asset}`,
+                  : {
+                      asset: SAC_CONTRACTS[network].XLM,
+                      amount: String(
+                        Math.round(parseFloat(config.price) * 10_000_000),
+                      ),
+                    },
               network: stellarNetwork,
               payTo: config.owner!,
             },
