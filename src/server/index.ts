@@ -14,6 +14,7 @@ import { ExactStellarScheme } from "@x402/stellar/exact/server";
 import { runAgent } from "../core/agentRunner.js";
 import {
   generatex402FacilitatorApiKey,
+  SAC_CONTRACTS,
   sendPayment,
 } from "../utils/stellar.js";
 import {
@@ -24,6 +25,7 @@ import axios from "axios";
 import type { AgentConfig } from "../core/types.js";
 import { rateLimit } from "express-rate-limit";
 import helmet from "helmet";
+import { Asset } from "@stellar/stellar-sdk";
 
 const rateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -317,7 +319,13 @@ export async function createAgentServer(opts: {
           accepts: [
             {
               scheme: "exact",
-              price: `$${config.price}`,
+              price:
+                config.asset === "USDC"
+                  ? `$${config.price}`
+                  : {
+                      asset: SAC_CONTRACTS[network].XLM,
+                      amount: config.price,
+                    },
               network: stellarNetwork,
               payTo: config.owner!,
             },

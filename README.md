@@ -1,4 +1,4 @@
-# Blockbot (beta)
+# Blockbot [beta]
 
 > Deploy AI agents on the Stellar blockchain with x402 micropayments.  
 > Agents are globally discoverable, callable by name, and charge per call in XLM or USDC.

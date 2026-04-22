@@ -34,7 +34,7 @@ export const SUPPORTED_MODELS = [
 ];
 
 export const DEFAULT_MODEL = "llama-3.3-70b-versatile";
-export const DEFAULT_PRICE = "0.10";
+export const DEFAULT_PRICE = "12";
 export const DEFAULT_ASSET = "XLM"; // XLM by default — works out of box with Friendbot
 export const DEFAULT_PORT = 51780;
 export const CONFIG_DIR_NAME = getBlockbotHome();
