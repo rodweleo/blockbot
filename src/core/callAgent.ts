@@ -233,28 +233,29 @@ export async function callAgent(
 
       // Build and sign Soroban transaction
       const passphrase = getNetworkPassphrase(stellarNetwork);
-      const tx = new Transaction(
+      let tx = new Transaction(
         paymentPayload.payload.transaction as string,
         passphrase,
       );
+      // const ref = Date.now().toString(36);
+      // const memo = Memo.text(`x402:p:v1:${ref}`);
 
       const sorobanData = tx.toEnvelope().v1()?.tx()?.ext()?.sorobanData();
       // Configure fee to 1 stroop, prevents testnet facilitator limit issue and lets us handle "fee too low" errors more gracefully
       if (sorobanData) {
-        const ref = Date.now().toString(36);
-        const clonedTx = TransactionBuilder.cloneFrom(tx, {
-          fee: tx.fee,
-          sorobanData,
-          networkPassphrase: passphrase,
-          memo: Memo.text(`x402:p:v1:${ref}`),
-        }).build();
-
-        // Re-sign after mutation
-        clonedTx.sign(callerKeypair);
-
         paymentPayload = {
           ...paymentPayload,
-          payload: { ...paymentPayload.payload, transaction: clonedTx.toXDR() },
+          payload: {
+            ...paymentPayload.payload,
+            transaction: TransactionBuilder.cloneFrom(tx, {
+              fee: tx.fee,
+              sorobanData,
+              networkPassphrase: passphrase,
+            })
+              // .addMemo(memo)
+              .build()
+              .toXDR(),
+          },
         };
       }
 
@@ -281,11 +282,11 @@ export async function callAgent(
         (name) => paidResponse.headers.get(name),
       );
 
+      const result = JSON.parse(text);
+
       if (paymentSettleResponse) {
-        log(
-          "Payment settled",
-          `txHash: ${paymentSettleResponse.transaction?.slice(0, 20)}...`,
-        );
+        log("Payment settlement response", result.result);
+        log("Payment settled", `txHash: ${paymentSettleResponse.transaction}`);
       }
 
       if (!paidResponse.ok) {
@@ -296,7 +297,6 @@ export async function callAgent(
         );
       }
 
-      const result = await paidResponse.json();
       const elapsed = ((Date.now() - start) / 1000).toFixed(1);
       log("Response received", `${elapsed}s`);
 

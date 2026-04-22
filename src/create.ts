@@ -21,7 +21,7 @@ program
   .description("Scaffold a new AI agent on the Stellar blockchain")
   .argument("<name>", "Agent name (e.g. my-researcher)")
   .option("-m, --model <model>", "Groq model to use", "llama-3.3-70b-versatile")
-  .option("-p, --price <price>", "Price per call in USDC", "0.10")
+  .option("-p, --price <price>", "Price per call in XLM|USDC", "10")
   .option("-a, --asset <asset>", "Payment asset XLM|USDC", "XLM")
   .option(
     "-d, --desc <description>",
@@ -47,13 +47,13 @@ async function createAgent(name: string, opts: any) {
   // ── Validate inputs ────────────────────────────────────────────────────────
   const nameError = validateAgentName(name);
   if (nameError) {
-    console.error(chalk.red(`  ✗ Invalid agent name: ${nameError}`));
+    console.error(chalk.red(`  Invalid agent name: ${nameError}`));
     process.exit(1);
   }
 
   const priceError = validatePrice(opts.price);
   if (priceError) {
-    console.error(chalk.red(`  ✗ Invalid price: ${priceError}`));
+    console.error(chalk.red(`  Invalid price: ${priceError}`));
     process.exit(1);
   }
 
